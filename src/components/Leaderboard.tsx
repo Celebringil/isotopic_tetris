@@ -33,12 +33,7 @@ export default function Leaderboard({ onClose, refreshTrigger }: LeaderboardProp
   }, [refreshTrigger]);
 
   const getDisplayName = (score: GameScore): string => {
-    if (score.users?.name) return score.users.name;
-    if (score.users?.email) {
-      // Show first part of email
-      const [localPart] = score.users.email.split('@');
-      return localPart.slice(0, 8) + (localPart.length > 8 ? '...' : '');
-    }
+    if (score.users?.nickname) return score.users.nickname;
     return 'Anonymous';
   };
 

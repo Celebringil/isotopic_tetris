@@ -16,8 +16,7 @@ export interface GameScore {
   played_at: string;
   created_at: string;
   users?: {
-    name: string | null;
-    email: string;
+    nickname: string | null;
   };
 }
 
@@ -48,7 +47,7 @@ export async function saveGameScore(
 export async function getLeaderboard(limit: number = 10): Promise<{ data: GameScore[] | null; error: Error | null }> {
   const { data, error } = await insforge.database
     .from('game_scores')
-    .select('*, users(name, email)')
+    .select('*, users(nickname)')
     .order('score', { ascending: false })
     .limit(limit);
 

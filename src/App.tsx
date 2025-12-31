@@ -1,9 +1,13 @@
+import { useState } from 'react';
 import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton, useUser, useAuth } from '@insforge/react';
 import IsotopicTetris from './components/IsotopicTetris';
+import Leaderboard from './components/Leaderboard';
 
 function App() {
   const { user } = useUser();
   const { isLoaded } = useAuth();
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [leaderboardRefreshTrigger, setLeaderboardRefreshTrigger] = useState(0);
 
   if (!isLoaded) {
     return (
@@ -21,6 +25,12 @@ function App() {
           Isotopic Tetris
         </h1>
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => setShowLeaderboard(true)}
+            className="px-4 py-2 bg-gradient-to-r from-[#ffd700] to-[#ff9800] text-black font-semibold rounded-lg hover:opacity-90 transition-opacity"
+          >
+            Leaderboard
+          </button>
           <SignedIn>
             <span className="text-sm text-gray-300">
               Welcome, {user?.name || user?.email}
@@ -74,7 +84,10 @@ function App() {
         </SignedOut>
 
         <SignedIn>
-          <IsotopicTetris />
+          <IsotopicTetris
+            userId={user?.id}
+            onScoreSaved={() => setLeaderboardRefreshTrigger(prev => prev + 1)}
+          />
         </SignedIn>
       </main>
 
@@ -84,6 +97,14 @@ function App() {
           <p>Press P to pause | Arrow keys to move | Space for hard drop</p>
         </SignedIn>
       </footer>
+
+      {/* Leaderboard Modal */}
+      {showLeaderboard && (
+        <Leaderboard
+          onClose={() => setShowLeaderboard(false)}
+          refreshTrigger={leaderboardRefreshTrigger}
+        />
+      )}
     </div>
   );
 }
