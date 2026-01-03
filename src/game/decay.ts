@@ -34,8 +34,8 @@ export function updateDecay(
         if (cell.halfLife <= 0) {
           const fromElement = cell.element.atomicNumber;
 
-          // Decay: reduce atomic number by 1-3 randomly
-          const decayAmount = Math.floor(Math.random() * 3) + 1;
+          // Decay: reduce atomic number by 1-2 randomly
+          const decayAmount = Math.floor(Math.random() * 2) + 1;
           const newAtomicNumber = cell.element.atomicNumber - decayAmount;
 
           if (newAtomicNumber > 0 && ELEMENTS[newAtomicNumber]) {

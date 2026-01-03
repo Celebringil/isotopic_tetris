@@ -180,11 +180,6 @@ export function createWasteCell(): Cell {
   };
 }
 
-// Check if element is heavy (Fe or above)
-export function isHeavyElement(atomicNumber: number): boolean {
-  return atomicNumber >= 26;
-}
-
 // Check if element is unstable
 export function isUnstable(atomicNumber: number): boolean {
   return UNSTABLE_ELEMENTS.has(atomicNumber) || atomicNumber > 82;
@@ -223,12 +218,12 @@ export const STAGES: StageConfig[] = [
     name: 'Supernova',
     targetElement: 26, // Fe
     spawnPool: [1, 2, 4], // H, He, Be
-    description: 'Forge Iron - Heavy gravity begins',
+    description: 'Forge Iron',
   },
   {
     name: 'Radioactive',
     targetElement: 92, // U
-    spawnPool: [2, 4, 6], // He, Be, C
+    spawnPool: [2, 4, 6, 12, 26], // He, Be, C, Mg, Fe - elements up to Iron
     description: 'Synthesize Uranium to win!',
   },
 ];

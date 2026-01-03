@@ -8,6 +8,11 @@ function App() {
   const { isLoaded } = useAuth();
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [leaderboardRefreshTrigger, setLeaderboardRefreshTrigger] = useState(0);
+  const [currentGame, setCurrentGame] = useState<{ score: number; highestElement: number } | undefined>(undefined);
+
+  const handleGameOver = (score: number, highestElement: number, _victory: boolean) => {
+    setCurrentGame({ score, highestElement });
+  };
 
   if (!isLoaded) {
     return (
@@ -65,6 +70,8 @@ function App() {
               <ul className="text-gray-300 text-xs leading-relaxed space-y-1">
                 <li><span className="text-[#76ff03]">Standard:</span> X + X = 2X (e.g., H + H = He)</li>
                 <li><span className="text-[#76ff03]">Alpha:</span> X + He = X+2 (e.g., C + He = O)</li>
+                <li><span className="text-[#76ff03]">Beta:</span> X + H = X+1 (e.g., C + H = N)</li>
+                <li><span className="text-[#76ff03]">Triple-Alpha:</span> 3 He = C (when adjacent)</li>
               </ul>
             </div>
 
@@ -82,7 +89,7 @@ function App() {
               <h3 className="text-[#ff1744] font-semibold mb-1">Special Mechanics</h3>
               <ul className="text-gray-300 text-xs leading-relaxed space-y-1">
                 <li><span className="text-[#ff1744]">Radioactive Decay:</span> Unstable elements have half-life timers. Clear lines to stabilize them!</li>
-                <li><span className="text-[#ffc107]">Heavy Gravity:</span> Elements heavier than Iron (Fe) crush through lighter elements.</li>
+                <li><span className="text-[#ffc107]">Line Clear Bonus:</span> Clearing lines boosts elements in the row above (+2 per line cleared).</li>
                 <li><span className="text-[#b388ff]">Overflow:</span> Fusing beyond Uranium creates waste blocks.</li>
               </ul>
             </div>
@@ -150,6 +157,7 @@ function App() {
           <SignedIn>
             <IsotopicTetris
               userId={user?.id}
+              onGameOver={handleGameOver}
               onScoreSaved={() => setLeaderboardRefreshTrigger(prev => prev + 1)}
             />
           </SignedIn>
@@ -168,6 +176,7 @@ function App() {
         <Leaderboard
           onClose={() => setShowLeaderboard(false)}
           refreshTrigger={leaderboardRefreshTrigger}
+          currentGame={currentGame}
         />
       )}
     </div>
