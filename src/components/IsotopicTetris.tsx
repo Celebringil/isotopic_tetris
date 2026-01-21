@@ -5,11 +5,11 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import {
   Cell,
   createCell,
+  createWasteCell,
   ELEMENTS,
   STAGES,
   getCurrentStage,
   getSpawnElement,
-  isHeavyElement,
   isUnstable,
   MAX_ATOMIC_NUMBER,
   StageConfig,
@@ -155,7 +155,7 @@ interface GameState {
 
 interface IsotopicTetrisProps {
   userId?: string;
-  onGameOver?: (score: number, victory: boolean) => void;
+  onGameOver?: (score: number, highestElement: number, victory: boolean) => void;
   onScoreSaved?: () => void; // Callback when score is saved to refresh leaderboard
 }
 
@@ -317,17 +317,10 @@ export default function IsotopicTetris({ userId, onGameOver, onScoreSaved }: Iso
       ctx.strokeStyle = `rgba(255, 23, 68, ${0.3 + Math.sin(Date.now() / 200) * 0.2})`;
       ctx.lineWidth = 2;
       ctx.strokeRect(px, py, size, size);
-    }
 
-    // Heavy element indicator (Fe+)
-    if (isHeavyElement(element.atomicNumber)) {
-      ctx.fillStyle = 'rgba(255, 215, 0, 0.3)';
-      ctx.beginPath();
-      ctx.moveTo(px + size - 8, py + 2);
-      ctx.lineTo(px + size - 2, py + 2);
-      ctx.lineTo(px + size - 2, py + 8);
-      ctx.closePath();
-      ctx.fill();
+      // Green/yellow tint overlay for better visibility
+      ctx.fillStyle = 'rgba(118, 255, 3, 0.25)';
+      ctx.fillRect(px + 1, py + 1, size - 2, size - 2);
     }
   };
 
@@ -548,7 +541,7 @@ export default function IsotopicTetris({ userId, onGameOver, onScoreSaved }: Iso
       if (decayIntervalRef.current) clearInterval(decayIntervalRef.current);
       clearLockTimer();
       updateDisplayState(state);
-      onGameOver?.(state.score, victory);
+      onGameOver?.(state.score, state.highestElement, victory);
 
       // Save score to database if user is logged in
       if (userId) {
@@ -569,18 +562,68 @@ export default function IsotopicTetris({ userId, onGameOver, onScoreSaved }: Iso
     [clearLockTimer, updateDisplayState, onGameOver, userId, onScoreSaved]
   );
 
-  // Helper function to clear full lines and return count
-  const clearFullLines = useCallback((board: (Cell | null)[][]): number => {
-    let clearedLines = 0;
+  // Result type for clearFullLinesAndTrack
+  interface ClearLinesResult {
+    clearedLines: number;
+    clearedRows: number[];
+  }
+
+  // Helper function to clear full lines, apply bonus to rows above, and return count + row indices
+  const clearFullLinesWithBonus = useCallback((board: (Cell | null)[][]): ClearLinesResult => {
+    const clearedRows: number[] = [];
+    const bonusPerLine = 2;
+
+    // First pass: identify all full rows
     for (let row = BOARD_HEIGHT - 1; row >= 0; row--) {
       if (board[row].every(cell => cell !== null)) {
-        board.splice(row, 1);
-        board.unshift(Array(BOARD_WIDTH).fill(null));
-        clearedLines++;
-        row++; // Re-check this row since we shifted
+        clearedRows.push(row);
       }
     }
-    return clearedLines;
+
+    if (clearedRows.length === 0) {
+      return { clearedLines: 0, clearedRows: [] };
+    }
+
+    // Calculate total bonus
+    const totalBonus = clearedRows.length * bonusPerLine;
+
+    // Find the highest (topmost) cleared row
+    const topClearedRow = Math.min(...clearedRows);
+
+    // Apply bonus to the row above the topmost cleared row
+    // (after clearing, this row will shift down to occupy the position of the cleared lines)
+    if (topClearedRow - 1 >= 0) {
+      const rowAbove = topClearedRow - 1;
+      for (let col = 0; col < BOARD_WIDTH; col++) {
+        const cell = board[rowAbove][col];
+
+        // Skip null cells and waste blocks
+        if (!cell || cell.element.atomicNumber === 0) {
+          continue;
+        }
+
+        const newAtomicNumber = cell.element.atomicNumber + totalBonus;
+
+        // Check for overflow
+        if (newAtomicNumber > MAX_ATOMIC_NUMBER) {
+          board[rowAbove][col] = createWasteCell();
+        } else {
+          board[rowAbove][col] = createCell(newAtomicNumber);
+        }
+      }
+    }
+
+    // Second pass: remove the cleared rows (from bottom to top to maintain indices)
+    for (let i = clearedRows.length - 1; i >= 0; i--) {
+      const row = clearedRows[i];
+      board.splice(row, 1);
+      board.unshift(Array(BOARD_WIDTH).fill(null));
+    }
+
+    return {
+      clearedLines: clearedRows.length,
+      clearedRows
+    };
   }, []);
 
   // Clear lines and handle fusion - loops until board is stable
@@ -601,10 +644,10 @@ export default function IsotopicTetris({ userId, onGameOver, onScoreSaved }: Iso
         // Step 1: Apply gravity first (cells fall down)
         applyFullGravity(state.board);
 
-        // Step 2: Clear any full lines
-        const clearedLines = clearFullLines(state.board);
-        if (clearedLines > 0) {
-          totalClearedLines += clearedLines;
+        // Step 2: Clear any full lines (bonus is applied internally to rows above)
+        const clearResult = clearFullLinesWithBonus(state.board);
+        if (clearResult.clearedLines > 0) {
+          totalClearedLines += clearResult.clearedLines;
           boardChanged = true;
 
           // Stabilize unstable elements on line clear
@@ -693,7 +736,7 @@ export default function IsotopicTetris({ userId, onGameOver, onScoreSaved }: Iso
 
       updateDisplayState(state);
     },
-    [clearFullLines, endGame, updateDisplayState]
+    [clearFullLinesWithBonus, endGame, updateDisplayState]
   );
 
   // Spawn new piece

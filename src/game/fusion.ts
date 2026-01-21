@@ -1,7 +1,7 @@
 // Fusion mechanics for Isotopic Tetris
-// Handles: Standard Fusion (X+X→2X), Alpha Process (X+He→X+2), Chain Reactions
+// Handles: Standard Fusion (X+X→2X), Alpha Process (X+He→X+2), Beta Decay (X+H→X+1), Triple-Alpha (He+He+He→C)
 
-import { Cell, createCell, createWasteCell, MAX_ATOMIC_NUMBER, isHeavyElement } from './elements';
+import { Cell, createCell, createWasteCell, MAX_ATOMIC_NUMBER } from './elements';
 
 export interface FusionResult {
   newBoard: (Cell | null)[][];
@@ -10,7 +10,7 @@ export interface FusionResult {
 }
 
 export interface FusionEvent {
-  type: 'standard' | 'alpha' | 'overflow';
+  type: 'standard' | 'alpha' | 'beta' | 'triple-alpha' | 'overflow';
   fromElements: number[];
   toElement: number;
   positions: { row: number; col: number }[];
@@ -161,6 +161,106 @@ function tryAlphaFusion(
   return null;
 }
 
+// Beta Decay Fusion (Proton Capture): X + H → X+1
+// Allows incrementing elements by 1 when combined with Hydrogen
+function tryBetaFusion(
+  board: (Cell | null)[][],
+  row: number,
+  col: number
+): FusionEvent | null {
+  const cell = board[row][col];
+  if (!cell || cell.element.atomicNumber <= 0) return null;
+
+  const atomicNumber = cell.element.atomicNumber;
+
+  // Skip if this is Hydrogen (would just become He via standard fusion)
+  if (atomicNumber === 1) return null;
+
+  const adjacent = getAdjacentCells(board, row, col);
+
+  // Find adjacent Hydrogen (atomic number 1)
+  for (const adj of adjacent) {
+    if (adj.cell.element.atomicNumber === 1) {
+      const newAtomicNumber = atomicNumber + 1;
+
+      // Check for overflow
+      if (newAtomicNumber > MAX_ATOMIC_NUMBER) {
+        board[row][col] = createWasteCell();
+        board[adj.row][adj.col] = createWasteCell();
+        return {
+          type: 'overflow',
+          fromElements: [atomicNumber, 1],
+          toElement: 0,
+          positions: [
+            { row, col },
+            { row: adj.row, col: adj.col }
+          ]
+        };
+      }
+
+      // Keep the non-H element, consume the H
+      board[row][col] = createCell(newAtomicNumber);
+      board[adj.row][adj.col] = null;
+
+      return {
+        type: 'beta',
+        fromElements: [atomicNumber, 1],
+        toElement: newAtomicNumber,
+        positions: [
+          { row, col },
+          { row: adj.row, col: adj.col }
+        ]
+      };
+    }
+  }
+
+  return null;
+}
+
+// Triple-Alpha Fusion: He + He + He → C
+// Checks for three adjacent Helium atoms and fuses them into Carbon
+function tryTripleAlphaFusion(
+  board: (Cell | null)[][],
+  row: number,
+  col: number
+): FusionEvent | null {
+  const cell = board[row][col];
+  if (!cell || cell.element.atomicNumber !== 2) return null; // Must be Helium
+
+  const adjacent = getAdjacentCells(board, row, col);
+
+  // Find all adjacent Helium atoms
+  const adjacentHelium: { row: number; col: number }[] = [];
+  for (const adj of adjacent) {
+    if (adj.cell.element.atomicNumber === 2) {
+      adjacentHelium.push({ row: adj.row, col: adj.col });
+    }
+  }
+
+  // Need at least 2 adjacent Helium (3 total including current)
+  if (adjacentHelium.length < 2) return null;
+
+  // Use the first two adjacent Helium atoms found
+  const hel1 = adjacentHelium[0];
+  const hel2 = adjacentHelium[1];
+
+  // Clear all three Helium atoms and create Carbon at current position
+  board[row][col] = createCell(6); // Carbon
+  board[hel1.row][hel1.col] = null;
+  board[hel2.row][hel2.col] = null;
+
+  return {
+    type: 'triple-alpha',
+    fromElements: [2, 2, 2],
+    toElement: 6,
+    positions: [
+      { row, col },
+      { row: hel1.row, col: hel1.col },
+      { row: hel2.row, col: hel2.col }
+    ]
+  };
+}
+
 // Main fusion check - performs recursive fusion until no more fusions possible
 export function performFusion(board: (Cell | null)[][]): FusionResult {
   const fusionEvents: FusionEvent[] = [];
@@ -185,21 +285,20 @@ export function performFusion(board: (Cell | null)[][]): FusionResult {
     fusionOccurred = false;
 
     // Scan entire board for fusion opportunities
-    // Priority: Standard fusion first, then Alpha process
+    // Priority: Triple-alpha > Standard > Alpha > Beta
     for (let row = 0; row < newBoard.length; row++) {
       for (let col = 0; col < newBoard[0].length; col++) {
         const cell = newBoard[row][col];
         if (!cell || cell.element.atomicNumber <= 0) continue;
 
-        // Try standard fusion first (same elements)
-        const standardResult = tryStandardFusion(newBoard, row, col);
-        if (standardResult) {
-          fusionEvents.push(standardResult);
+        // Try triple-alpha fusion first (highest priority - 3 He → C)
+        const tripleAlphaResult = tryTripleAlphaFusion(newBoard, row, col);
+        if (tripleAlphaResult) {
+          fusionEvents.push(tripleAlphaResult);
           fusionOccurred = true;
-          if (standardResult.toElement > highestElement) {
-            highestElement = standardResult.toElement;
+          if (tripleAlphaResult.toElement > highestElement) {
+            highestElement = tripleAlphaResult.toElement;
           }
-          // Apply gravity after fusion (cells above should fall)
           applyGravity(newBoard);
           break; // Restart scan after each fusion
         }
@@ -207,7 +306,29 @@ export function performFusion(board: (Cell | null)[][]): FusionResult {
       if (fusionOccurred) break;
     }
 
-    // If no standard fusion, try alpha process
+    // Try standard fusion (same elements)
+    if (!fusionOccurred) {
+      for (let row = 0; row < newBoard.length; row++) {
+        for (let col = 0; col < newBoard[0].length; col++) {
+          const cell = newBoard[row][col];
+          if (!cell || cell.element.atomicNumber <= 0) continue;
+
+          const standardResult = tryStandardFusion(newBoard, row, col);
+          if (standardResult) {
+            fusionEvents.push(standardResult);
+            fusionOccurred = true;
+            if (standardResult.toElement > highestElement) {
+              highestElement = standardResult.toElement;
+            }
+            applyGravity(newBoard);
+            break;
+          }
+        }
+        if (fusionOccurred) break;
+      }
+    }
+
+    // Try alpha process (X + He → X+2)
     if (!fusionOccurred) {
       for (let row = 0; row < newBoard.length; row++) {
         for (let col = 0; col < newBoard[0].length; col++) {
@@ -220,6 +341,28 @@ export function performFusion(board: (Cell | null)[][]): FusionResult {
             fusionOccurred = true;
             if (alphaResult.toElement > highestElement) {
               highestElement = alphaResult.toElement;
+            }
+            applyGravity(newBoard);
+            break;
+          }
+        }
+        if (fusionOccurred) break;
+      }
+    }
+
+    // Try beta fusion (X + H → X+1) - lowest priority
+    if (!fusionOccurred) {
+      for (let row = 0; row < newBoard.length; row++) {
+        for (let col = 0; col < newBoard[0].length; col++) {
+          const cell = newBoard[row][col];
+          if (!cell || cell.element.atomicNumber <= 0) continue;
+
+          const betaResult = tryBetaFusion(newBoard, row, col);
+          if (betaResult) {
+            fusionEvents.push(betaResult);
+            fusionOccurred = true;
+            if (betaResult.toElement > highestElement) {
+              highestElement = betaResult.toElement;
             }
             applyGravity(newBoard);
             break;
@@ -261,58 +404,7 @@ function applyGravity(board: (Cell | null)[][]): void {
   }
 }
 
-// Heavy element gravity (crushing mechanic)
-// Heavy elements (Fe+) crush down through lighter elements
-export function applyHeavyGravity(board: (Cell | null)[][]): boolean {
-  const boardHeight = board.length;
-  const boardWidth = board[0].length;
-  let crushed = false;
-
-  for (let col = 0; col < boardWidth; col++) {
-    for (let row = boardHeight - 2; row >= 0; row--) { // Start from second-to-last row
-      const cell = board[row][col];
-      if (!cell) continue;
-
-      // Check if this is a heavy element
-      if (isHeavyElement(cell.element.atomicNumber)) {
-        // Check cell below
-        const belowCell = board[row + 1][col];
-
-        // If empty below, move down
-        if (!belowCell) {
-          board[row + 1][col] = cell;
-          board[row][col] = null;
-          crushed = true;
-        }
-        // If lighter element below, crush it (swap positions, lighter goes up)
-        else if (belowCell.element.atomicNumber < cell.element.atomicNumber &&
-                 belowCell.element.atomicNumber > 0) { // Not waste
-          board[row + 1][col] = cell;
-          board[row][col] = belowCell;
-          crushed = true;
-        }
-      }
-    }
-  }
-
-  return crushed;
-}
-
-// Full gravity pass including heavy element crushing
+// Full gravity pass - just normal gravity
 export function applyFullGravity(board: (Cell | null)[][]): void {
-  // First, normal gravity
   applyGravity(board);
-
-  // Then, heavy element crushing (repeat until no more crushing)
-  let crushing = true;
-  let iterations = 0;
-  const maxIterations = board.length * 2; // Prevent infinite loops
-
-  while (crushing && iterations < maxIterations) {
-    crushing = applyHeavyGravity(board);
-    if (crushing) {
-      applyGravity(board); // Reapply normal gravity after crushing
-    }
-    iterations++;
-  }
 }

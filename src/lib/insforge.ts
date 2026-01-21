@@ -16,8 +16,7 @@ export interface GameScore {
   played_at: string;
   created_at: string;
   users?: {
-    name: string | null;
-    email: string;
+    nickname: string | null;
   };
 }
 
@@ -44,11 +43,12 @@ export async function saveGameScore(
   return { data, error };
 }
 
-// Get top scores for leaderboard
-export async function getLeaderboard(limit: number = 10): Promise<{ data: GameScore[] | null; error: Error | null }> {
+// Get top scores for leaderboard (sorted by highest element, then score)
+export async function getLeaderboard(limit: number = 50): Promise<{ data: GameScore[] | null; error: Error | null }> {
   const { data, error } = await insforge.database
     .from('game_scores')
-    .select('*, users(name, email)')
+    .select('*, users(nickname)')
+    .order('highest_element', { ascending: false })
     .order('score', { ascending: false })
     .limit(limit);
 
